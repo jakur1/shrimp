@@ -19,7 +19,7 @@ jobs:
       - run: pyinstaller --onefile --noconsole --name krewetka krewetka.py
       - uses: actions/upload-artifact@v4
         with:
-          name: krewetka-${{ matrix.os }}
+          name: shrimp-${{ matrix.os }}
           path: dist/*
 
   release:

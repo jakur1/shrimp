@@ -2,14 +2,131 @@ import tkinter as tk
 import math
 import os
 import sys
+import json
+import re
+import subprocess
 
-INTERVAL_MIN = 1  
-SHOW_SEC = 10      
+DEFAULT_INTERVAL_MIN = 30  
+SHOW_SEC = 10               
 W, H = 220, 210
-
 
 BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) \
     else os.path.dirname(os.path.abspath(__file__))
+
+
+
+def config_path():
+    if sys.platform.startswith("win"):
+        d = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "shrimp")
+    elif sys.platform == "darwin":
+        d = os.path.expanduser("~/Library/Application Support/shrimp")
+    else:
+        d = os.path.join(os.environ.get("XDG_CONFIG_HOME",
+                         os.path.expanduser("~/.config")), "shrimp")
+    return os.path.join(d, "config.json")
+
+def load_config():
+    try:
+        with open(config_path()) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_config(cfg):
+    try:
+        os.makedirs(os.path.dirname(config_path()), exist_ok=True)
+        with open(config_path(), "w") as f:
+            json.dump(cfg, f)
+    except Exception as e:
+        print("could not save config:", e)
+
+def list_monitors():
+    """List of (x, y, width, height, name), sorted left to right."""
+    mons = []
+    try:
+        from screeninfo import get_monitors
+        mons = [(m.x, m.y, m.width, m.height, m.name or "") for m in get_monitors()]
+    except Exception:
+        pass
+    if not mons:
+        try:
+            out = subprocess.check_output(["xrandr", "--listmonitors"],
+                                          text=True, stderr=subprocess.DEVNULL)
+            for w, h, x, y, name in re.findall(
+                    r"^\s*\d+:\s+\S+\s+(\d+)/\d+x(\d+)/\d+\+(\d+)\+(\d+)\s+(\S+)",
+                    out, re.M):
+                mons.append((int(x), int(y), int(w), int(h), name))
+        except Exception:
+            pass
+    if not mons:
+        probe = tk.Tk()
+        probe.withdraw()
+        mons = [(0, 0, probe.winfo_screenwidth(), probe.winfo_screenheight(), "")]
+        probe.destroy()
+    return sorted(mons, key=lambda m: (m[0], m[1]))
+
+
+def settings_window(mons, cur_idx, cur_interval):
+    win = tk.Tk()
+    win.title("Shrimp - settings")
+    result = {"ok": False}
+    mon_var = tk.IntVar(value=cur_idx)
+    interval_var = tk.StringVar(value=str(cur_interval))
+
+    if len(mons) > 1:
+        tk.Label(win, text="Where should the shrimp appear?",
+                 font=("Arial", 12, "bold")).pack(padx=20, pady=(15, 6), anchor="w")
+        for i, (x, y, w, h, name) in enumerate(mons):
+            label = f"Monitor {i + 1}: {w}x{h}" + (f"  ({name})" if name else "")
+            tk.Radiobutton(win, text=label, variable=mon_var, value=i).pack(
+                padx=30, anchor="w")
+
+    tk.Label(win, text="How often?",
+             font=("Arial", 12, "bold")).pack(padx=20, pady=(15, 6), anchor="w")
+    row = tk.Frame(win)
+    row.pack(padx=30, anchor="w")
+    tk.Label(row, text="Every").pack(side="left")
+    tk.Spinbox(row, from_=1, to=240, width=5,
+               textvariable=interval_var).pack(side="left", padx=6)
+    tk.Label(row, text="minutes").pack(side="left")
+
+    def start():
+        try:
+            minutes = int(interval_var.get())
+        except ValueError:
+            minutes = cur_interval
+        minutes = max(1, min(1440, minutes))
+        result.update(ok=True, monitor=mon_var.get(), interval=minutes)
+        win.destroy()
+
+    tk.Button(win, text="Start", command=start).pack(
+        fill="x", padx=20, pady=(18, 6))
+    tk.Label(win, text="To change later, run with --choose",
+             fg="#666").pack(padx=20, pady=(0, 12))
+    win.mainloop()
+    return result
+
+
+mons = list_monitors()
+cfg = load_config()
+
+idx = cfg.get("monitor")
+idx_valid = isinstance(idx, int) and 0 <= idx < len(mons)
+interval = cfg.get("interval")
+interval_valid = isinstance(interval, int) and interval >= 1
+if not idx_valid:
+    idx = 0
+if not interval_valid:
+    interval = DEFAULT_INTERVAL_MIN
+
+if "--choose" in sys.argv or not idx_valid or not interval_valid:
+    res = settings_window(mons, idx, interval)
+    if res["ok"]:
+        idx, interval = res["monitor"], res["interval"]
+        cfg.update(monitor=idx, interval=interval)
+        save_config(cfg)
+
+
 
 root = tk.Tk()
 root.overrideredirect(True)
@@ -47,23 +164,13 @@ else:
 c.create_text(W // 2, H - 22, text="this you", fill="#333",
               font=("Arial", 16, "bold"))
 
-def primary_monitor():
-    """x, y, width, height of the primary monitor."""
-    try:
-        from screeninfo import get_monitors
-        mons = get_monitors()
-        m = next((m for m in mons if m.is_primary), mons[0])
-        return m.x, m.y, m.width, m.height
-    except Exception:
-        return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
-
 def show():
-    mx, my, mw, mh = primary_monitor()
+    mx, my, mw, mh, _ = mons[idx]
     root.geometry(f"{W}x{H}+{mx + mw - W - 20}+{my + mh - H - 60}")
     root.deiconify()
     root.lift()
     root.after(SHOW_SEC * 1000, root.withdraw)
-    root.after(INTERVAL_MIN * 60 * 1000, show)
+    root.after(interval * 60 * 1000, show)
 
 root.withdraw()
 root.after(1000, show)

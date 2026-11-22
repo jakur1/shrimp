@@ -3,12 +3,11 @@ import math
 import os
 import sys
 
-INTERVAL_MIN = 1   # minutes between popups
-SHOW_SEC = 10       # how long the popup stays visible
+INTERVAL_MIN = 1  
+SHOW_SEC = 10      
 W, H = 220, 210
 
-# Folder of the script, or of the exe when packaged.
-# A shrimp.png placed here replaces the drawn shrimp.
+
 BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) \
     else os.path.dirname(os.path.abspath(__file__))
 

@@ -17,6 +17,13 @@ jobs:
           python-version: '3.12'
       - run: pip install pyinstaller screeninfo
       - run: pyinstaller --onefile --noconsole --name shrimp shrimp.py
+      - name: Rename output
+        shell: bash
+        run: |
+          cd dist
+          for f in shrimp shrimp.exe; do
+            if [ -f "$f" ]; then mv "$f" "shrimp-${{ runner.os }}${f#shrimp}"; fi
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: shrimp-${{ matrix.os }}
